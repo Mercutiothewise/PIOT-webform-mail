@@ -1,5 +1,14 @@
+const express = require('express');
+const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Initialize Supabase client (service role for admin access)
 const supabase = createClient(
@@ -23,60 +32,22 @@ function getBaseUrl(req) {
   return process.env.BASE_URL || `https://${req.headers.host}`;
 }
 
-module.exports = async (req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'PUREIOT Support API is running',
+    version: '3.0.0',
+    endpoints: {
+      submitTicket: 'POST /api/submit-ticket',
+      getTickets: 'GET /api/tickets/:userId',
+      updateTicket: 'GET /update/:ticketId',
+    }
+  });
+});
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  const { url, method } = req;
-
-  // Root endpoint
-  if (url === '/' && method === 'GET') {
-    return res.json({
-      status: 'PUREIOT Support API is running',
-      version: '3.0.0',
-      endpoints: {
-        submitTicket: 'POST /api/submit-ticket',
-        getTickets: 'GET /api/tickets/:userId',
-        updateTicket: 'GET /update/:ticketId',
-      }
-    });
-  }
-
-  // Route to appropriate handler
-  if (url.startsWith('/update/')) {
-    return handleUpdate(req, res);
-  } else if (url === '/api/submit-ticket' && method === 'POST') {
-    return handleSubmitTicket(req, res);
-  } else if (url.match(/^\/api\/tickets\/(.+)/) && method === 'GET') {
-    return handleGetUserTickets(req, res);
-  } else if (url.match(/^\/api\/ticket\/(.+)/) && method === 'GET') {
-    return handleGetTicket(req, res);
-  }
-
-  res.status(404).json({ error: 'Not found' });
-};
-
-// ============================================
-// HANDLERS
-// ============================================
-
-async function handleUpdate(req, res) {
-  const ticketId = req.url.split('/update/')[1].split('?')[0];
-
-  if (req.method === 'GET') {
-    return showUpdateForm(ticketId, req, res);
-  } else if (req.method === 'POST') {
-    return processUpdate(ticketId, req, res);
-  }
-}
-
-async function showUpdateForm(ticketId, req, res) {
+// Ticket update form
+app.get('/update/:ticketId', async (req, res) => {
+  const { ticketId } = req.params;
   const { data: ticket } = await supabase
     .from('tickets')
     .select(`
@@ -293,11 +264,12 @@ async function processUpdate(ticketId, req, res) {
     })
     .eq('id', ticketId);
 
-  // Add note as comment if provided
-  if (note && note.trim()) {
-    await supabase
-      .from('ticket_comments')
-      .insert({
+ );
+
+// Handle ticket update form submission
+app.post('/update/:ticketId', async (req, res) => {
+  const { ticketId } = req.params;
+  const { status, technicianName, note } = req.
         ticket_id: ticketId,
         author_name: technicianName || 'Support Team',
         text: note.trim(),
@@ -556,10 +528,11 @@ async function handleSubmitTicket(req, res) {
       success: false,
       message: 'Failed to submit ticket. Please try again.',
     });
-  }
-}
+ );
 
-async function handleGetUserTickets(req, res) {
+// Get tickets for a user
+app.get('/api/tickets/:userId', async (req, res) => {
+  const { userId } = req.params
   const userId = req.url.split('/api/tickets/')[1];
   
   const { data: tickets } = await supabase
@@ -568,10 +541,11 @@ async function handleGetUserTickets(req, res) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  res.json({ success: true, tickets: tickets || [] });
-}
+ );
 
-async function handleGetTicket(req, res) {
+// Get single ticket
+app.get('/api/ticket/:ticketId', async (req, res) => {
+  const { ticketId } = req.params
   const ticketId = req.url.split('/api/ticket/')[1];
   
   const { data: ticket } = await supabase
@@ -583,32 +557,9 @@ async function handleGetTicket(req, res) {
   if (!ticket) {
     return res.status(404).json({ success: false, message: 'Ticket not found' });
   }
+);
 
-  res.json({ success: true, ticket });
-}
-
-// Helper to parse POST body
-function parseBody(req) {
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', chunk => body += chunk.toString());
-    req.on('end', () => {
-      try {
-        // Check if JSON
-        if (req.headers['content-type']?.includes('application/json')) {
-          resolve(JSON.parse(body));
-        } else {
-          // Parse form data
-          const params = new URLSearchParams(body);
-          const result = {};
-          for (const [key, value] of params) {
-            result[key] = value;
-          }
-          resolve(result);
-        }
-      } catch {
-        resolve({});
-      }
-    });
+// Export the Express app for Vercel
+module.exports = app;   });
   });
 }
