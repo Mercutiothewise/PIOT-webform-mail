@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Initialize Supabase client (service role for admin access)
+// Initialize Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -19,7 +19,7 @@ const supabase = createClient(
 // Email transporter
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: process.env.SMTP_PORT || 587,
+  port: parseInt(process.env.SMTP_PORT) || 587,
   secure: false,
   auth: {
     user: process.env.SMTP_USER,
@@ -27,7 +27,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Get base URL
 function getBaseUrl(req) {
   return process.env.BASE_URL || `https://${req.headers.host}`;
 }
@@ -45,9 +44,10 @@ app.get('/', (req, res) => {
   });
 });
 
-// Ticket update form
+// Ticket update form (GET)
 app.get('/update/:ticketId', async (req, res) => {
   const { ticketId } = req.params;
+
   const { data: ticket } = await supabase
     .from('tickets')
     .select(`
@@ -74,7 +74,7 @@ app.get('/update/:ticketId', async (req, res) => {
         <body>
           <div class="container">
             <h1>❌ Ticket Not Found</h1>
-            <p>Ticket ID <strong>${ticketId}</strong> was not found in the system.</p>
+            <p>Ticket ID <strong>${ticketId}</strong> was not found.</p>
           </div>
         </body>
       </html>
@@ -84,10 +84,7 @@ app.get('/update/:ticketId', async (req, res) => {
   const userName = `${ticket.user?.first_name || ''} ${ticket.user?.surname || ''}`.trim();
   const companyName = ticket.company?.name || 'Unknown';
 
-  // Technicians list
   const technicians = ['Jeandre', 'Dekel', 'Rob', 'Aiden', 'Jakes', 'Jaco', 'Norman', 'Karabo'];
-  
-  // Status options
   const statuses = [
     { value: 'unassigned', label: 'Unassigned' },
     { value: 'assigned', label: 'Assigned' },
@@ -135,7 +132,6 @@ app.get('/update/:ticketId', async (req, res) => {
           .logo { font-size: 32px; margin-bottom: 10px; }
           h1 { color: #6528F7; margin: 0 0 5px 0; font-size: 22px; }
           .ticket-id { color: #6c757d; font-size: 14px; font-family: monospace; background: #f8f9fa; padding: 5px 10px; border-radius: 4px; display: inline-block; }
-          
           .ticket-info {
             background: #f8f9fa;
             padding: 15px;
@@ -145,7 +141,6 @@ app.get('/update/:ticketId', async (req, res) => {
           .ticket-info h3 { margin: 0 0 10px 0; color: #333; font-size: 16px; }
           .ticket-info p { margin: 5px 0; color: #666; font-size: 14px; }
           .ticket-info .label { color: #999; }
-          
           .form-group { margin-bottom: 20px; }
           label { display: block; margin-bottom: 8px; color: #333; font-weight: 600; font-size: 14px; }
           select, textarea { 
@@ -161,7 +156,6 @@ app.get('/update/:ticketId', async (req, res) => {
             border-color: #6528F7;
           }
           textarea { resize: vertical; min-height: 100px; }
-          
           button { 
             width: 100%;
             background: linear-gradient(135deg, #6528F7 0%, #A855F7 100%);
@@ -178,10 +172,6 @@ app.get('/update/:ticketId', async (req, res) => {
             transform: translateY(-2px);
             box-shadow: 0 5px 20px rgba(101, 40, 247, 0.4);
           }
-          button:active {
-            transform: translateY(0);
-          }
-          
           .current-status {
             display: inline-block;
             padding: 4px 12px;
@@ -203,7 +193,6 @@ app.get('/update/:ticketId', async (req, res) => {
             <h1>Update Ticket Status</h1>
             <span class="ticket-id">${ticket.ticket_number}</span>
           </div>
-          
           <div class="ticket-info">
             <h3>${ticket.subject}</h3>
             <p><span class="label">Company:</span> ${companyName}</p>
@@ -211,7 +200,6 @@ app.get('/update/:ticketId', async (req, res) => {
             <p><span class="label">Current Status:</span> <span class="current-status ${ticket.status}">${ticket.status.replace('-', ' ')}</span></p>
             ${ticket.technician_name ? `<p><span class="label">Technician:</span> ${ticket.technician_name}</p>` : ''}
           </div>
-          
           <form method="POST">
             <div class="form-group">
               <label for="status">📊 New Status</label>
@@ -219,30 +207,28 @@ app.get('/update/:ticketId', async (req, res) => {
                 ${statusOptions}
               </select>
             </div>
-            
             <div class="form-group">
               <label for="technicianName">👨‍🔧 Assign Technician</label>
               <select name="technicianName" id="technicianName">
                 ${technicianOptions}
               </select>
             </div>
-            
             <div class="form-group">
               <label for="note">📝 Add Note (Optional)</label>
-              <textarea name="note" id="note" placeholder="Add a note or update for the user..."></textarea>
+              <textarea name="note" id="note" placeholder="Add a note or update..."></textarea>
             </div>
-            
             <button type="submit">✅ Update Ticket</button>
           </form>
         </div>
       </body>
     </html>
   `);
-}
+});
 
-async function processUpdate(ticketId, req, res) {
-  const body = await parseBody(req);
-  const { status, technicianName, note } = body;
+// Handle form submission (POST)
+app.post('/update/:ticketId', async (req, res) => {
+  const { ticketId } = req.params;
+  const { status, technicianName, note } = req.body;
 
   const { data: ticket } = await supabase
     .from('tickets')
@@ -254,7 +240,6 @@ async function processUpdate(ticketId, req, res) {
     return res.status(404).send('Ticket not found');
   }
 
-  // Update ticket
   await supabase
     .from('tickets')
     .update({
@@ -264,12 +249,10 @@ async function processUpdate(ticketId, req, res) {
     })
     .eq('id', ticketId);
 
- );
-
-// Handle ticket update form submission
-app.post('/update/:ticketId', async (req, res) => {
-  const { ticketId } = req.params;
-  const { status, technicianName, note } = req.
+  if (note && note.trim()) {
+    await supabase
+      .from('ticket_comments')
+      .insert({
         ticket_id: ticketId,
         author_name: technicianName || 'Support Team',
         text: note.trim(),
@@ -334,39 +317,25 @@ app.post('/update/:ticketId', async (req, res) => {
       </body>
     </html>
   `);
-}
+});
 
-async function handleSubmitTicket(req, res) {
+// Submit ticket
+app.post('/api/submit-ticket', async (req, res) => {
   try {
     const { ticket, user } = req.body;
 
     if (!ticket || !user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing ticket or user data',
-      });
+      return res.status(400).json({ success: false, message: 'Missing ticket or user data' });
     }
 
     const { subject, description, priority, contactPreference, scheduledTime } = ticket;
     const { firstName, surname, email, phone, companyName, anyDeskId } = user;
 
-    // Generate ticket number
     const ticketNumber = `PIOT-${Date.now().toString(36).toUpperCase()}`;
 
-    // Get company and user IDs
-    const { data: company } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('name', companyName)
-      .single();
+    const { data: company } = await supabase.from('companies').select('id').eq('name', companyName).single();
+    const { data: profile } = await supabase.from('profiles').select('id').eq('email', email).single();
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .single();
-
-    // Insert ticket into Supabase
     const { data: newTicket, error } = await supabase
       .from('tickets')
       .insert({
@@ -388,7 +357,6 @@ async function handleSubmitTicket(req, res) {
       return res.status(500).json({ success: false, message: 'Failed to create ticket' });
     }
 
-    // Send email notification
     const baseUrl = getBaseUrl(req);
     const updateUrl = `${baseUrl}/update/${newTicket.id}`;
 
@@ -410,98 +378,36 @@ async function handleSubmitTicket(req, res) {
           <h1 style="color: white; margin: 0; font-size: 24px;">🎫 New Support Ticket</h1>
           <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">${ticketNumber}</p>
         </div>
-        
         <div style="padding: 30px;">
-          <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap;">
+          <div style="margin-bottom: 20px; text-align: center;">
             <span style="background: ${pColor.bg}; color: ${pColor.text}; padding: 8px 16px; border-radius: 20px; font-weight: bold; text-transform: uppercase; font-size: 12px;">
               ⚠️ ${(priority || 'medium').toUpperCase()} PRIORITY
             </span>
           </div>
-          
           <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-            <p style="margin: 0; font-size: 16px; color: #92400e; font-weight: 600;">
-              ${contactDisplay}
-            </p>
+            <p style="margin: 0; font-size: 16px; color: #92400e; font-weight: 600;">${contactDisplay}</p>
           </div>
-          
           <div style="text-align: center; margin-bottom: 25px;">
-            <a href="${updateUrl}" 
-               style="display: inline-block; background: linear-gradient(135deg, #6528F7 0%, #A855F7 100%); 
-                      color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; 
-                      font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(101, 40, 247, 0.3);">
-              📝 Update Ticket Status
-            </a>
+            <a href="${updateUrl}" style="display: inline-block; background: linear-gradient(135deg, #6528F7 0%, #A855F7 100%); color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">📝 Update Ticket Status</a>
           </div>
-          
-          <div style="background-color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px; border-bottom: 2px solid #6528F7; padding-bottom: 10px;">
-              📋 Issue Details
-            </h2>
+          <div style="background-color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px;">📋 Issue Details</h2>
             <p style="color: #1F2937; font-size: 16px; font-weight: 600; margin: 0 0 10px 0;">${subject}</p>
-            <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; border-left: 4px solid #6528F7;">
-              <p style="color: #4B5563; line-height: 1.6; margin: 0; white-space: pre-wrap;">${description}</p>
+            <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px;">
+              <p style="color: #4B5563; line-height: 1.6; margin: 0;">${description}</p>
             </div>
           </div>
-          
-          <div style="background-color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px; border-bottom: 2px solid #6528F7; padding-bottom: 10px;">
-              👤 User Information
-            </h2>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 10px 0; color: #6B7280; width: 35%; font-size: 14px;">Name:</td>
-                <td style="padding: 10px 0; color: #1F2937; font-weight: 600; font-size: 14px;">${firstName} ${surname}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0; color: #6B7280; font-size: 14px;">Company:</td>
-                <td style="padding: 10px 0; color: #1F2937; font-weight: 600; font-size: 14px;">${companyName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0; color: #6B7280; font-size: 14px;">Phone:</td>
-                <td style="padding: 10px 0; color: #1F2937; font-weight: 600; font-size: 14px;">
-                  <a href="tel:${phone}" style="color: #6528F7; text-decoration: none;">${phone}</a>
-                </td>
-              </tr>
-              ${email ? `
-              <tr>
-                <td style="padding: 10px 0; color: #6B7280; font-size: 14px;">Email:</td>
-                <td style="padding: 10px 0; color: #1F2937; font-weight: 600; font-size: 14px;">
-                  <a href="mailto:${email}" style="color: #6528F7; text-decoration: none;">${email}</a>
-                </td>
-              </tr>
-              ` : ''}
-            </table>
+          <div style="background-color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px;">👤 User Information</h2>
+            <p><strong>Name:</strong> ${firstName} ${surname}</p>
+            <p><strong>Company:</strong> ${companyName}</p>
+            <p><strong>Phone:</strong> <a href="tel:${phone}">${phone}</a></p>
+            ${email ? `<p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>` : ''}
           </div>
-          
-          <div style="background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px; border-bottom: 2px solid #6528F7; padding-bottom: 10px;">
-              🖥️ Remote Access
-            </h2>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 10px 0; color: #6B7280; width: 35%; font-size: 14px;">AnyDesk ID:</td>
-                <td style="padding: 10px 0;">
-                  <span style="color: #1F2937; font-weight: 600; font-size: 18px; font-family: 'Courier New', monospace; background-color: #f3f4f6; padding: 8px 16px; border-radius: 6px;">${anyDeskId}</span>
-                </td>
-              </tr>
-            </table>
+          <div style="background-color: white; padding: 20px; border-radius: 12px;">
+            <h2 style="color: #6528F7; margin: 0 0 15px 0; font-size: 18px;">🖥️ Remote Access</h2>
+            <p><strong>AnyDesk ID:</strong> <span style="font-family: monospace; background: #f3f4f6; padding: 8px 16px; border-radius: 6px; font-size: 18px;">${anyDeskId}</span></p>
           </div>
-          
-          <div style="text-align: center; margin-top: 25px;">
-            <a href="${updateUrl}" 
-               style="display: inline-block; background: #1F2937; 
-                      color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; 
-                      font-weight: bold; font-size: 14px;">
-              📝 Update Status
-            </a>
-          </div>
-        </div>
-        
-        <div style="background-color: #1F2937; padding: 20px; text-align: center;">
-          <p style="color: #9CA3AF; margin: 0; font-size: 12px;">
-            Ticket submitted via PUREIOT Support App<br>
-            ${new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}
-          </p>
         </div>
       </div>
     `;
@@ -524,30 +430,24 @@ async function handleSubmitTicket(req, res) {
 
   } catch (error) {
     console.error('Error submitting ticket:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to submit ticket. Please try again.',
-    });
- );
+    res.status(500).json({ success: false, message: 'Failed to submit ticket' });
+  }
+});
 
-// Get tickets for a user
+// Get user tickets
 app.get('/api/tickets/:userId', async (req, res) => {
-  const { userId } = req.params
-  const userId = req.url.split('/api/tickets/')[1];
-  
+  const { userId } = req.params;
   const { data: tickets } = await supabase
     .from('tickets')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
-
- );
+  res.json({ success: true, tickets: tickets || [] });
+});
 
 // Get single ticket
 app.get('/api/ticket/:ticketId', async (req, res) => {
-  const { ticketId } = req.params
-  const ticketId = req.url.split('/api/ticket/')[1];
-  
+  const { ticketId } = req.params;
   const { data: ticket } = await supabase
     .from('tickets')
     .select('*')
@@ -557,9 +457,8 @@ app.get('/api/ticket/:ticketId', async (req, res) => {
   if (!ticket) {
     return res.status(404).json({ success: false, message: 'Ticket not found' });
   }
-);
+  res.json({ success: true, ticket });
+});
 
-// Export the Express app for Vercel
-module.exports = app;   });
-  });
-}
+// Export for Vercel
+module.exports = app;
